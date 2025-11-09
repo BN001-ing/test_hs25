@@ -28,13 +28,13 @@ about_page = st.Page(
 
 KuBeKo_page = st.Page(
     page = "views/auswertung.py",
-    title = "Auswertung",
+    title = "KuBeKo",
     icon = "📊",
 )
 
 Löschen_page = st.Page(
     page = "views/attribute entfernen.py",
-    title = "Attribut löscher",
+    title = "DaReCo",
     icon = "🧹",
 )    
 

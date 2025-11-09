@@ -42,11 +42,19 @@ with col3:
     st.image("./assets/Logo_KuBeKo.png")
     if st.button("KuBeKo",icon="📊" ,width="stretch"):
         st.switch_page("views/auswertung.py")
+    st.write(
+        """
+       KuBeKo ist ein digitales Werkzeug zur automatisierten Auswertung von IFC-Modellen im Bereich Kosten- und Mengenermittlung.
+        Das Tool liest IFC-Daten ein, analysiert die enthaltenen Bauteile und ermittelt daraus relevante Mengen, Bauteiltypen und 
+        Materialinformationen. Diese Informationen werden anschließend mit vordefinierten Kostenschlüsseln, 
+        um eine erste Kostenschätzung oder eine strukturiere Mengenauswertung zu ermöglichen.
+        """
+    )
 
 
 with col4:
     st.image("./assets/Logo_Rad.png")
-    if st.button("Attribut Entferner",icon="🧹" ,width="stretch"):
+    if st.button("DaReCo",icon="🧹" ,width="stretch"):
         st.switch_page("views/attribute entfernen.py")
     st.write(
         """

@@ -1,3 +1,4 @@
 myenv/
 Theory unterlagen/
 .gitignore
+__pycache__/
