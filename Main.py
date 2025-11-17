@@ -38,6 +38,12 @@ Löschen_page = st.Page(
     icon = "🧹",
 )    
 
+Material_page = st.Page(
+    page = "views/material list.py",
+    title = "Materialien",
+    icon = "🧱",
+)    
+
 
 #----Navigation Setup [WITHOUT SECTIONS]---
 #pg = st.navigation(pages=[about_page,dart_page,rangliste_page])
@@ -45,7 +51,8 @@ Löschen_page = st.Page(
 pg = st.navigation(
     {
         "Info": [about_page],
-        "IFC": [KuBeKo_page,Löschen_page],
+        "KuBeKo": [KuBeKo_page,Material_page],
+        "weitere tools": [Löschen_page]
     }
 )
 

@@ -5,7 +5,7 @@ import ifcopenshell.util.element
 import tempfile
 from pathlib import Path
 import tempfile, os
-import IFC
+import Logik.IFC as IFC
 
 st.title("🧹 DaReCo")
 
