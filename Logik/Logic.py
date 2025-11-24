@@ -4,6 +4,8 @@ import re
 import unicodedata
 from typing import Dict, Iterable, Tuple
 import pandas as pd
+from typing import Dict, Tuple
+import pandas as pd
 
 try:
     # RapidFuzz ist schneller/stabiler als fuzzywuzzy + benötigt kein Levenshtein
@@ -309,3 +311,242 @@ def apply_session_overrides(
     df["Effektiver_Preis"] = eff_preise
     df["Kosten_total_eff"] = df["Volumen_m3_sum"].astype(float) * df["Effektiver_Preis"]
     return df
+
+
+# --- Bewehrung: gruppierte Übersicht nur für Beton ---
+
+def build_rebar_kubaturen(df_ifc: pd.DataFrame,
+                          text_match: int = 90,
+                          col_map: Dict[str, str] | None = None
+                          ) -> pd.DataFrame:
+    """
+    Gruppiert identisch wie Material-Kubaturen, filtert aber nur Beton-Bauteile
+    und liefert Spalten ohne Preise:
+      Grundstück, Gebäude, Geschoss, Bauteil, Material, Volumen_m3_sum, Anzahl_Elemente
+    """
+    if df_ifc is None or df_ifc.empty:
+        return pd.DataFrame(columns=[
+            "Grundstück","Gebäude","Geschoss","Bauteil","Material",
+            "Volumen_m3_sum","Anzahl_Elemente"
+        ])
+
+    col_map = col_map or {}
+    c_grund  = col_map.get("Grundstück", "Grundstück")
+    c_gebae  = col_map.get("Gebäude", "Gebäude")
+    c_storey = col_map.get("Geschoss", "Geschoss")
+    c_name   = col_map.get("Bauteil", col_map.get("Namen", "Namen"))
+    c_mat    = col_map.get("Material", "Material")
+    c_vol    = col_map.get("Volumen", col_map.get("Volumen_m3", "Volumen_m3"))
+
+    df = df_ifc.copy()
+    add_normalized_columns(df, [c_grund, c_gebae, c_storey, c_name, c_mat])
+
+    # Fuzzy-Keys
+    df["Grundstück_key"], _ = fuzzy_map_series(df[c_grund],  text_match)
+    df["Gebäude_key"],     _ = fuzzy_map_series(df[c_gebae],  text_match)
+    df["Geschoss_key"],    _ = fuzzy_map_series(df[c_storey], text_match)
+    df["Bauteil_key"],     _ = fuzzy_map_series(df[c_name],    text_match)
+    df["Material_key"],    _ = fuzzy_map_series(df[c_mat],     text_match)
+
+    # nur "Beton"-artige Materialien (robust normalisiert)
+    mat_norm = df[c_mat].map(_norm_txt)
+    beton_mask = mat_norm.str.contains(r"\bbeton\b", na=False) | mat_norm.str.match(r"^c\d", na=False)
+    df = df[beton_mask].copy()
+
+    # Leere Pflichtfelder raus
+    for _c in ["Gebäude_key","Geschoss_key","Bauteil_key","Material_key"]:
+        df[_c] = df[_c].replace("", pd.NA)
+    df = df.dropna(subset=["Gebäude_key","Geschoss_key","Bauteil_key","Material_key"])
+    mask_nonempty = (
+        df["Gebäude_key"].fillna("").str.strip().ne("") &
+        df["Geschoss_key"].fillna("").str.strip().ne("") &
+        df["Bauteil_key"].fillna("").str.strip().ne("") &
+        df["Material_key"].fillna("").str.strip().ne("")
+    )
+    df = df[mask_nonempty].copy()
+
+    # Gruppieren
+    grp_cols = ["Grundstück_key","Gebäude_key","Geschoss_key","Bauteil_key","Material_key"]
+    g = (df.groupby(grp_cols, dropna=False, as_index=False)
+           .agg(Volumen_m3_sum=(c_vol, "sum"),
+                Anzahl_Elemente=("Material_key", "size")))
+
+    # Lesbare Namen & Sortierung
+    g = g.rename(columns={
+        "Grundstück_key":"Grundstück",
+        "Gebäude_key":"Gebäude",
+        "Geschoss_key":"Geschoss",
+        "Bauteil_key":"Bauteil",
+        "Material_key":"Material"
+    })
+    g["__ges_key"] = g["Geschoss"].map(storey_sort_key)
+    g = g.sort_values(by=["Grundstück","Gebäude","__ges_key","Bauteil","Material"]).drop(columns="__ges_key")
+
+    out_cols = ["Grundstück","Gebäude","Geschoss","Bauteil","Material","Volumen_m3_sum","Anzahl_Elemente"]
+    for c in out_cols:
+        if c not in g.columns:
+            g[c] = pd.NA
+    return g[out_cols]
+
+# Session-basierte kg/m³-Overrides anwenden und Gesamt-kg berechnen
+RebarKey = Tuple[str,str,str,str,str]  # (Grundstück,Gebäude,Geschoss,Bauteil,Material)
+
+def apply_rebar_overrides(
+    df_rebar: pd.DataFrame,
+    overrides: Dict[RebarKey, float] | None,
+    default_kg_m3: float = 0.0
+) -> pd.DataFrame:
+    """
+    Erweitert df_rebar um 'kg_m3_eff' (effektive kg/m³) und 'Bewehrung_kg' (Volumen·kg/m³).
+    overrides: dict[(grund,geb,ges,bauteil,material)] = kg/m3
+    """
+    if df_rebar is None or df_rebar.empty:
+        return df_rebar
+
+    df = df_rebar.copy()
+    # Startwert pro Zeile: Default (0) – du kannst hier später je Bauteil Defaults einsetzen
+    df["kg_m3_auto"] = float(default_kg_m3)
+
+    eff = []
+    for _, r in df.iterrows():
+        k = (str(r["Grundstück"]), str(r["Gebäude"]), str(r["Geschoss"]), str(r["Bauteil"]), str(r["Material"]))
+        if overrides and k in overrides and overrides[k] is not None:
+            eff.append(float(overrides[k]))
+        else:
+            eff.append(float(r.get("kg_m3_auto", 0.0)))
+    df["kg_m3_eff"] = eff
+    df["Bewehrung_kg"] = df["Volumen_m3_sum"].astype(float) * df["kg_m3_eff"].astype(float)
+    return df
+
+def build_dashboard_data(df_view: pd.DataFrame) -> dict:
+    """
+    Erzeugt alle Kennzahlen/Strukturen fürs Dashboard aus df_view (Tab2-View).
+    df_view muss mind. haben:
+    Grundstück, Gebäude, Geschoss, Material,
+    Volumen_m3_sum, Effektiver_Preis, Kosten_total_eff
+
+    Returns dict mit fertigen Aggregationen.
+    """
+    if df_view is None or df_view.empty:
+        return {
+            "project_total_cost": 0.0,
+            "project_total_volume": 0.0,
+            "cost_by_building": pd.DataFrame(columns=["Gebäude", "Kosten"]),
+            "cost_by_storey": pd.DataFrame(columns=["Gebäude", "Geschoss", "Kosten"]),
+            "vol_by_material": pd.DataFrame(columns=["Material", "Volumen"]),
+            "cost_by_material": pd.DataFrame(columns=["Material", "Kosten"]),
+            "elem_count": 0,
+        }
+
+    df = df_view.copy()
+
+    # robust auf float
+    for c in ["Volumen_m3_sum", "Kosten_total_eff"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+
+    project_total_cost = float(df["Kosten_total_eff"].sum())
+    project_total_volume = float(df["Volumen_m3_sum"].sum())
+    elem_count = int(df.get("Anzahl_Elemente", pd.Series([0]*len(df))).sum())
+
+    # Kosten pro Gebäude
+    cost_by_building = (
+        df.groupby("Gebäude", dropna=False)["Kosten_total_eff"]
+          .sum()
+          .reset_index()
+          .rename(columns={"Kosten_total_eff": "Kosten"})
+          .sort_values("Kosten", ascending=False)
+    )
+
+    # Kosten pro Geschoss (innerhalb Gebäude)
+    cost_by_storey = (
+        df.groupby(["Gebäude", "Geschoss"], dropna=False)["Kosten_total_eff"]
+          .sum()
+          .reset_index()
+          .rename(columns={"Kosten_total_eff": "Kosten"})
+          .sort_values(["Gebäude", "Kosten"], ascending=[True, False])
+    )
+
+    # Volumen pro Material
+    vol_by_material = (
+        df.groupby("Material", dropna=False)["Volumen_m3_sum"]
+          .sum()
+          .reset_index()
+          .rename(columns={"Volumen_m3_sum": "Volumen"})
+          .sort_values("Volumen", ascending=False)
+    )
+
+    # Kosten pro Material
+    cost_by_material = (
+        df.groupby("Material", dropna=False)["Kosten_total_eff"]
+          .sum()
+          .reset_index()
+          .rename(columns={"Kosten_total_eff": "Kosten"})
+          .sort_values("Kosten", ascending=False)
+    )
+
+    return {
+        "project_total_cost": project_total_cost,
+        "project_total_volume": project_total_volume,
+        "cost_by_building": cost_by_building,
+        "cost_by_storey": cost_by_storey,
+        "vol_by_material": vol_by_material,
+        "cost_by_material": cost_by_material,
+        "elem_count": elem_count,
+    }
+
+def get_default_material_price(df_prices: pd.DataFrame, material_name: str) -> float:
+    """
+    Holt den Standardpreis für ein Material aus df_prices.
+    Wenn nicht vorhanden -> 0.0
+    Erwartet Spalten: Material, Preis
+    """
+    if df_prices is None or df_prices.empty:
+        return 0.0
+    hit = df_prices[df_prices["Material"].astype(str).str.lower() == material_name.lower()]
+    if hit.empty:
+        return 0.0
+    try:
+        return float(hit.iloc[0]["Preis"])
+    except Exception:
+        return 0.0
+
+
+def compute_rebar_price_table(
+    total_rebar_kg: float,
+    diameter_fractions: Dict[str, float],
+    price_overrides: Dict[str, float],
+    default_price: float,
+) -> Tuple[pd.DataFrame, float]:
+    """
+    Rechnet Bewehrungskosten pro Ø-Bin.
+    - total_rebar_kg: Gesamtbewehrung (kg)
+    - diameter_fractions: dict z.B. {"8-10":0.5, "12-16":0.35, ...} Summe ~1
+    - price_overrides: dict Ø-Bin -> Preis CHF/kg (falls leer -> default)
+    - default_price: Standardpreis CHF/kg
+
+    Return:
+      df_bins (Bin, Anteil_%, kg, Preis_CHF_kg, Kosten_CHF)
+      total_cost
+    """
+    rows = []
+    total_cost = 0.0
+
+    for bin_name, frac in diameter_fractions.items():
+        frac = float(frac or 0.0)
+        kg = float(total_rebar_kg or 0.0) * frac
+        price = float(price_overrides.get(bin_name, default_price) or default_price)
+        cost = kg * price
+        total_cost += cost
+
+        rows.append({
+            "Ø_Bin": bin_name,
+            "Anteil_%": frac * 100.0,
+            "kg": kg,
+            "Preis_CHF_kg": price,
+            "Kosten_CHF": cost,
+        })
+
+    df_bins = pd.DataFrame(rows)
+    return df_bins, float(total_cost)
+
