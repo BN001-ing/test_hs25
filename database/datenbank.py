@@ -33,7 +33,7 @@ def connect():
     """
     return sqlite3.connect("preise.db")
 
-def create_tables(Connection):
+def create_tables():
     """
     Erstellt eine Datenbank fals keine vorhanden.
     Args:
@@ -41,8 +41,10 @@ def create_tables(Connection):
     Return:
         Keiner
     """
-    with Connection:
-        Connection.execute(CREATE_MATERIAL_TABLE)
+    conn = connect()
+    with conn:
+        conn.execute(CREATE_MATERIAL_TABLE)
+    conn.close()
 
 def add_material(material_name, einheit, preis_chf):
     """Fügt ein neues Material mit Preis in die Datenbank ein."""

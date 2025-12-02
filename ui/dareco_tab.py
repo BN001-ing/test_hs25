@@ -1,11 +1,7 @@
-import pandas as pd
 import streamlit as st
-import ifcopenshell
-import ifcopenshell.util.element
-import tempfile
 from pathlib import Path
-import tempfile, os
-import Logik.IFC as IFC
+import os
+import logic.dareco_logic as IFC
 
 st.title("🧹 DaReCo")
 

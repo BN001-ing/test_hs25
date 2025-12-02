@@ -1,64 +1,75 @@
 import streamlit as st
-import os
 
-#App Starten
-#streamlit run UI.py
+# --- PAGE SETUP ---
 
-#App beenden
-#CTRL + C unten im terminal
-
-#Smileys mit Windows + .
-
-#st.title("Titel")
-#st.header("This is a header")
-#st.subheader("Subheader")
-#st.markdown("markdown")
-#st.caption("caption")
-#st.divider()
-
-#st.image(os.path.join(os.getcwd(),"static","logo.png"))
-
-#---PAGE SETUP---
 about_page = st.Page(
-    page = "views/abaout.py",
-    title = "Abaout",
-    icon = "🏠",
-    default = True,
+    page="ui/about_tab.py",
+    title="About",
+    icon="🏠",
+    default=True,
 )
 
-KuBeKo_page = st.Page(
-    page = "views/auswertung.py",
-    title = "KuBeKo",
-    icon = "📊",
+# KuBeKo-Seiten
+kubeko_dashboard_page = st.Page(
+    page="ui/dashboard.py",
+    title="Dashboard",
+    icon="📊",
 )
 
-Löschen_page = st.Page(
-    page = "views/attribute entfernen.py",
-    title = "DaReCo",
-    icon = "🧹",
-)    
+kubeko_material_page = st.Page(
+    page="ui/material_tab.py",
+    title="Material Kubaturen",
+    icon="🧱",
+)
 
-Material_page = st.Page(
-    page = "views/material list.py",
-    title = "Materialien",
-    icon = "🧱",
-)    
+kubeko_rebars_page = st.Page(
+    page="ui/rebars_tab.py",
+    title="Bewehrung",
+    icon="🧵",
+)
 
+# Material-Admin (Preisdatenbank)
+material_admin_page = st.Page(
+    page="ui/material_admin.py",
+    title="Materialien",
+    icon="📦",
+)
 
-#----Navigation Setup [WITHOUT SECTIONS]---
-#pg = st.navigation(pages=[about_page,dart_page,rangliste_page])
+# Debug-Dataframe
+debug_page = st.Page(
+    page="ui/debug_tab.py",
+    title="Dataframe (debug)",
+    icon="👩‍💻",
+)
+
+# DaReCo (Attribute entfernen)
+dareco_page = st.Page(
+    page="ui/dareco_tab.py",
+    title="DaReCo",
+    icon="🧹",
+)
+
+# --- NAVIGATION ---
 
 pg = st.navigation(
     {
         "Info": [about_page],
-        "KuBeKo": [KuBeKo_page,Material_page],
-        "weitere tools": [Löschen_page]
+        "KuBeKo": [
+            kubeko_dashboard_page,
+            kubeko_material_page,
+            kubeko_rebars_page,
+            debug_page,
+        ],
+        "Weitere Tools": [
+            material_admin_page,
+            dareco_page,
+        ],
     }
 )
 
-#---SHARED ON ALL PAGES---
+# --- SHARED ON ALL PAGES ---
 st.logo("assets/Logo.png")
 st.sidebar.text("Made with ❤️ by Niels")
 
-#---RUN NAVIGATION---
+# --- RUN ---
 pg.run()
