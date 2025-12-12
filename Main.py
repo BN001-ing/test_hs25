@@ -55,13 +55,13 @@ pg = st.navigation(
     {
         "Info": [about_page],
         "KuBeKo": [
-            kubeko_dashboard_page,
             kubeko_material_page,
             kubeko_rebars_page,
+            kubeko_dashboard_page,
+            material_admin_page,
             debug_page,
         ],
         "Weitere Tools": [
-            material_admin_page,
             dareco_page,
         ],
     }
